@@ -3,8 +3,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import TOKEN, SOURCE_CHANNEL_1, SOURCE_CHANNEL_2, TARGET_VOICE_CHANNELS, ALLOWED_USERS
+from services import embeds
 from services.cooldown import CooldownManager
 from services.webhook import WebhookService
+
+_FORWARD_MAP = {
+    SOURCE_CHANNEL_1: SOURCE_CHANNEL_2,
+    SOURCE_CHANNEL_2: SOURCE_CHANNEL_1,
+}
 
 
 class CoolBot(commands.Bot):
@@ -26,14 +32,21 @@ class CoolBot(commands.Bot):
         await self.load_extension("cogs.voice")
         await self.load_extension("cogs.fun")
         await self.load_extension("cogs.uwuify")
+        await self.load_extension("cogs.social")
+        await self.load_extension("cogs.reminders")
+        await self.load_extension("cogs.stats")
 
         async def global_slash_cooldown(interaction: discord.Interaction) -> bool:
             if interaction.user.id in ALLOWED_USERS:
                 return True
             if not self.command_cooldown.check_cooldown(interaction.user.id):
                 await interaction.response.send_message(
-                    f"Подожди {self.command_cooldown.cooldown_time} сек. перед следующей командой.",
-                    ephemeral=True
+                    embed=embeds.err(
+                        f"подожди **{self.command_cooldown.cooldown_time} сек**",
+                        title="кулдаун",
+                        user=interaction.user,
+                    ),
+                    ephemeral=True,
                 )
                 return False
             return True
@@ -71,16 +84,12 @@ class CoolBot(commands.Bot):
             except Exception as e:
                 print(f"Trigger error: {e}")
 
-        channel_map = {
-            SOURCE_CHANNEL_1: SOURCE_CHANNEL_2,
-            SOURCE_CHANNEL_2: SOURCE_CHANNEL_1
-        }
-
-        if message.channel.id in channel_map:
-            target_channel = self.get_channel(channel_map[message.channel.id])
+        target_id = _FORWARD_MAP.get(message.channel.id)
+        if target_id is not None:
+            target_channel = self.get_channel(target_id)
             if not target_channel:
                 try:
-                    target_channel = await self.fetch_channel(channel_map[message.channel.id])
+                    target_channel = await self.fetch_channel(target_id)
                 except Exception:
                     target_channel = None
             if target_channel:
